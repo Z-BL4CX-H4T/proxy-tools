@@ -26,3 +26,13 @@ Displays the list of proxies that passed the test (alive), complete with:
 • proxies_alive.csv → Active proxies with full details.
 
 By: Z-SH4DOWSPEECH
+
+# Command
+```
+apt update -y
+apt upgrade -y
+apt install git -y
+git clone https://github.com/Z-BL4CX-H4T/proxy-tools.git
+cd proxy-tools
+python3 proxy-tools.py
+```
