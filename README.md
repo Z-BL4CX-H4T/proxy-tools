@@ -1,38 +1,18 @@
 # proxy-tools
 
-This tool is a Proxy Getter + Proxy Checker created for the following purposes:
+Get Proxy & Check Proxy
 
-🔧 Main Functions:
+Main Functions:
+🌐 Loads proxies from URLs or files.
+✅ Checks whether proxies are valid (HTTP, HTTPS, SOCKS4, SOCKS5).
+💾 Saves valid proxies to a file.
+🧹 Cleans up input and output in the application.
 
-1. Get Proxy
-Fetches hundreds to thousands of free and public proxies from various online sources, then saves them to a file called proxies_raw.txt.
+Pros:
+🖥️ Interactive GUI, easy to use.
+⏳ Multithreaded → fast processing without lag.
+📊 Real-time progress bar for proxy checking.
+✔ Can clearly display and filter valid proxies.
+🛠️ Supports various proxy types (HTTP, HTTPS, SOCKS4, SOCKS5).
 
-2. Proxy Checker
-Checks whether the proxies are still active (ALIVE) or dead (DEAD) using multi-threading for fast processing.  
-Supports three types of proxies:  
-• HTTP  
-• SOCKS4  
-• SOCKS5
-
-3. View Alive Proxies
-Displays the list of proxies that passed the test (alive), complete with:  
-• IP & Port  
-• Proxy Type  
-• Response Time (latency)  
-• Geolocation
-
-📁 Output Files:
-• proxies_raw.txt → All raw proxies.  
-• proxies_alive.csv → Active proxies with full details.
-
-By: Z-SH4DOWSPEECH
-
-# Command
-```
-apt update -y
-apt upgrade -y
-apt install git -y
-git clone https://github.com/Z-BL4CX-H4T/proxy-tools.git
-cd proxy-tools
-python3 proxy-tools.py
-```
+* Author: Z-SH4DOWSPEECH *
