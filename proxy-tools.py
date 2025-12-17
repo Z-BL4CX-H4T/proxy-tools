@@ -118,7 +118,7 @@ class ProxyChecker(QThread):
 class ProxyTool(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PROXY TOOL — GREEN EDITION")
+        self.setWindowTitle("PROXY TOOL — BY Z-Sh4DOWSPEECH")
         self.setGeometry(200, 80, 900, 700)
         self.proxies = []
 
