@@ -22,4 +22,4 @@
 
 🛠️ Supports various proxy types (HTTP, HTTPS, SOCKS4, SOCKS5).
 
-* Author: Z-SH4DOWSPEECH *
+* Author: Z-SH4DOWSPEECH
