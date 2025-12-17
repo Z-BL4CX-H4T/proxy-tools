@@ -22,4 +22,20 @@
 
 🛠️ Supports various proxy types (HTTP, HTTPS, SOCKS4, SOCKS5).
 
+# Instalation: Linux
+```
+python3 -m venv venv
+source venv/bin/activate
+sudo apt update -y
+sudo apt upgrade -y
+sudo install python2 -y
+sudo install git -y
+pip install requests
+pip install PyQt5
+git clone https://github.com/Z-BL4CX-H4T/proxy-tools.git
+cd proxy-tools
+python3 proxy-tools..py
+```
+
+# Does not support termux
 * Author: Z-SH4DOWSPEECH
