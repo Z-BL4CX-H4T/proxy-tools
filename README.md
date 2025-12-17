@@ -20,8 +20,6 @@
 
 ✔ Can clearly display and filter valid proxies.
 
-# Author: Z-SH4DOWSPEECH
-
 🛠️ Supports various proxy types (HTTP, HTTPS, SOCKS4, SOCKS5).
 
 * Author: Z-SH4DOWSPEECH *
