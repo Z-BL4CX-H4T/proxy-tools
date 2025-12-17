@@ -1,133 +1,266 @@
+import sys
 import requests
-import threading
-import json
-import os
+import socks
+import socket
 import time
-from concurrent.futures import ThreadPoolExecutor
-from colorama import init, Fore
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QTextEdit, QLabel, QFileDialog, QProgressBar
+)
+from PyQt5.QtGui import QFont, QColor, QPalette
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
-init(autoreset=True)
+class ProxyLoader(QThread):
+    update_signal = pyqtSignal(str)
+    finish_signal = pyqtSignal(list)
 
-DEFAULT_PROXY_SOURCES = [
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
-    "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt",
-    "https://raw.githubusercontent.com/mertguvencli/http-proxy-list/main/proxy-list/data.txt",
-    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt",
-    "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt"
-]
+    def __init__(self, urls):
+        super().__init__()
+        self.urls = urls
 
-def fetch_proxies():
-    proxies = set()
-    print(Fore.YELLOW + "\n🔄 Mengambil proxy dari semua sumber...")
-    for url in DEFAULT_PROXY_SOURCES:
+    def run(self):
+        proxies = []
+        for url in self.urls:
+            url = url.strip()
+            if not url.startswith("http"):
+                continue
+            try:
+                r = requests.get(url, timeout=10)
+                if r.status_code == 200:
+                    lines = r.text.strip().splitlines()
+                    proxies.extend([l.strip() for l in lines if l.strip()])
+                    self.update_signal.emit(f"✔ Sukses load {len(lines)} proxy dari {url}")
+                else:
+                    self.update_signal.emit(f"✘ Gagal load dari {url}")
+            except Exception as e:
+                self.update_signal.emit(f"✘ Error load dari {url}: {e}")
+            time.sleep(0.05)
+        self.finish_signal.emit(proxies)
+
+def parse_proxy(proxy_str):
+    proxy_str = proxy_str.strip()
+    proxy_type = "http" 
+
+    if proxy_str.startswith("http://"):
+        proxy_type = "http"
+        proxy_str = proxy_str[7:]
+    elif proxy_str.startswith("https://"):
+        proxy_type = "https"
+        proxy_str = proxy_str[8:]
+    elif proxy_str.startswith("socks4://"):
+        proxy_type = "socks4"
+        proxy_str = proxy_str[9:]
+    elif proxy_str.startswith("socks5://"):
+        proxy_type = "socks5"
+        proxy_str = proxy_str[9:]
+
+    if ":" not in proxy_str:
+        return None, None, None
+    ip, port = proxy_str.split(":")[0:2]
+    try:
+        port = int(port)
+    except:
+        return None, None, None
+    return ip, port, proxy_type
+
+class ProxyChecker(QThread):
+    update_signal = pyqtSignal(str, bool)
+    progress_signal = pyqtSignal(int)
+    finish_signal = pyqtSignal(int, int)
+
+    def __init__(self, proxies):
+        super().__init__()
+        self.proxies = proxies
+
+    def run(self):
+        valid_count = 0
+        invalid_count = 0
+        total = len(self.proxies)
+        for idx, proxy in enumerate(self.proxies, 1):
+            result = self.check_proxy(proxy)
+            if result:
+                valid_count += 1
+            else:
+                invalid_count += 1
+            self.update_signal.emit(proxy, result)
+            self.progress_signal.emit(int(idx / total * 100))
+        self.finish_signal.emit(valid_count, invalid_count)
+
+    def check_proxy(self, proxy):
+        ip, port, ptype = parse_proxy(proxy)
+        if not ip:
+            return False
+
         try:
-            res = requests.get(url, timeout=10)
-            if res.status_code == 200:
-                lines = res.text.strip().splitlines()
-                proxies.update(lines)
-                print(Fore.GREEN + f"✅ {url} ({len(lines)} proxy)")
-        except Exception as e:
-            print(Fore.RED + f"❌ {url} -> Gagal: {e}")
-    with open("proxies_raw.txt", "w") as f:
-        f.write("\n".join(proxies))
-    print(Fore.GREEN + f"\n✅ Total proxy disimpan ke proxies_raw.txt: {len(proxies)}\n")
+            if ptype in ["http", "https"]:
+                pro = {"http": f"http://{ip}:{port}", "https": f"http://{ip}:{port}"}
+                r = requests.get("http://httpbin.org/ip", proxies=pro, timeout=5)
+                if r.status_code == 200:
+                    return True
+            elif ptype == "socks4":
+                s = socks.socksocket()
+                s.set_proxy(socks.SOCKS4, ip, port)
+                s.settimeout(5)
+                s.connect(("httpbin.org", 80))
+                s.close()
+                return True
+            elif ptype == "socks5":
+                s = socks.socksocket()
+                s.set_proxy(socks.SOCKS5, ip, port)
+                s.settimeout(5)
+                s.connect(("httpbin.org", 80))
+                s.close()
+                return True
+        except:
+            return False
+        return False
 
-def check_proxy(proxy, proxy_type, timeout=5):
-    proxy_dict = {
-        "http": f"http://{proxy}",
-        "https": f"https://{proxy}",
-        "socks4": f"socks4://{proxy}",
-        "socks5": f"socks5://{proxy}"
-    }
-    try:
-        start = time.time()
-        response = requests.get("http://httpbin.org/ip", proxies={
-            "http": proxy_dict[proxy_type], "https": proxy_dict[proxy_type]
-        }, timeout=timeout)
-        latency = round(time.time() - start, 2)
-        if response.status_code == 200:
-            geo_info = get_geo_info(proxy.split(':')[0])
-            result = f"{proxy},{proxy_type},{latency}s,{geo_info}"
-            print(Fore.GREEN + f"[ALIVE] {result}", flush=True)
-            with open("proxies_alive.csv", "a") as f:
-                f.write(result + "\n")
-    except:
-        print(Fore.RED + f"[DEAD]  {proxy:<21}", flush=True)
+class ProxyTool(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("PROXY TOOL — GREEN EDITION")
+        self.setGeometry(200, 80, 900, 700)
+        self.proxies = []
 
-def get_geo_info(ip):
-    try:
-        res = requests.get(f"http://ip-api.com/json/{ip}?fields=country,city,query", timeout=3)
-        if res.status_code == 200:
-            data = res.json()
-            return f"{data['query']} ({data['city']}, {data['country']})"
-    except:
-        return "Unknown"
+        self.build_ui()
+        self.apply_theme()
 
-def run_checker(file_name, proxy_type):
-    if not os.path.exists(file_name):
-        print(Fore.RED + "❌ File tidak ditemukan.")
-        return
+    def apply_theme(self):
+        palette = QPalette()
+        palette.setColor(QPalette.Window, QColor(0, 0, 0))
+        palette.setColor(QPalette.Base, QColor(0, 0, 0))
+        palette.setColor(QPalette.Text, QColor(0, 255, 0))
+        self.setPalette(palette)
 
-    with open("proxies_alive.csv", "w") as f:
-        f.write("IP:Port,Type,Latency,Location\n")
+    def build_ui(self):
+        layout = QVBoxLayout()
 
-    with open(file_name, "r") as f:
-        proxies = [line.strip() for line in f if line.strip()]
+        title = QLabel("PROXY CHECKER TOOL")
+        title.setAlignment(Qt.AlignCenter)
+        title.setFont(QFont("Consolas", 22, QFont.Bold))
+        title.setStyleSheet("color:#00FF00;")
+        layout.addWidget(title)
 
-    print(f"\n🔍 Memeriksa {len(proxies)} proxy...\n")
-    with ThreadPoolExecutor(max_workers=50) as executor:
-        for proxy in proxies:
-            executor.submit(check_proxy, proxy, proxy_type)
+        self.input_area = QTextEdit()
+        self.input_area.setPlaceholderText("Paste URL proxy di sini (satu per baris)...")
+        self.input_area.setStyleSheet("background:#000; color:#00FF00; border:1px solid #00FF00;")
+        layout.addWidget(self.input_area)
 
-    print(Fore.GREEN + "\n✅ Pemeriksaan selesai. Hasil disimpan di proxies_alive.csv\n")
+        btns = QHBoxLayout()
+        self.btn_get_proxy = QPushButton("Get Proxy dari URL")
+        self.btn_load_file = QPushButton("Load Proxy dari File")
+        self.btn_check = QPushButton("Check Proxy")
+        self.btn_save = QPushButton("Save Proxy Valid")
+        self.btn_clear = QPushButton("Clear")
 
-def menu():
-    ascii_art = f"""{Fore.GREEN}
+        for b in (self.btn_get_proxy, self.btn_load_file, self.btn_check, self.btn_save, self.btn_clear):
+            b.setStyleSheet("background:#003300; color:#00FF00; font-weight:bold; padding:6px;")
+            btns.addWidget(b)
+        layout.addLayout(btns)
 
-██████╗ ██████╗  ██████╗ ██╗  ██╗██╗   ██╗  ████████╗ ██████╗  ██████╗ ██╗     ███████╗
-██╔══██╗██╔══██╗██╔═══██╗╚██╗██╔╝╚██╗ ██╔╝  ╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██╔════╝
-██████╔╝██████╔╝██║   ██║ ╚███╔╝  ╚████╔╝█████╗██║   ██║   ██║██║   ██║██║     ███████╗
-██╔═══╝ ██╔══██╗██║   ██║ ██╔██╗   ╚██╔╝ ╚════╝██║   ██║   ██║██║   ██║██║     ╚════██║
-██║     ██║  ██║╚██████╔╝██╔╝ ██╗   ██║        ██║   ╚██████╔╝╚██████╔╝███████╗███████║
-╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝        ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚══════╝                            
-				by Z-SH4DOWSPEECH
-"""
-    print(ascii_art)
+        self.progress = QProgressBar()
+        self.progress.setValue(0)
+        self.progress.setStyleSheet("QProgressBar {border:1px solid #00FF00; text-align:center; color:#00FF00;} QProgressBar::chunk {background:#00FF00;}")
+        layout.addWidget(self.progress)
 
-    while True:
-        print(Fore.GREEN + "\n==== TOOLS GET PROXY + CHECKER ====")
-        print(Fore.RED + "1." + Fore.WHITE + " Get Proxy dari URL")
-        print(Fore.RED + "2." + Fore.WHITE + " Proxy Checker (.txt input)")
-        print(Fore.RED + "3." + Fore.WHITE + " Lihat proxy hidup")
-        print(Fore.RED + "4." + Fore.WHITE + " Keluar\n")
+        self.output = QTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setStyleSheet("background:#000; color:#00FF00; border:1px solid #00FF00;")
+        layout.addWidget(self.output)
 
-        pilihan = input(Fore.CYAN + "Pilih menu [1-4]: ").strip()
+        self.setLayout(layout)
 
-        if pilihan == "1":
-            fetch_proxies()
-        elif pilihan == "2":
-            file_name = input("Masukkan nama file proxy (contoh: proxies_raw.txt): ").strip()
-            print("\nPilih jenis proxy:")
-            print("1. HTTP\n2. SOCKS4\n3. SOCKS5")
-            tipe = input("Pilih [1/2/3]: ").strip()
-            proxy_type = {"1": "http", "2": "socks4", "3": "socks5"}.get(tipe)
-            if proxy_type:
-                run_checker(file_name, proxy_type)
-            else:
-                print(Fore.RED + "❌ Jenis proxy tidak valid.")
-        elif pilihan == "3":
-            if os.path.exists("proxies_alive.csv"):
-                print(Fore.GREEN + "\n📄 Daftar proxy hidup:")
-                with open("proxies_alive.csv", "r") as f:
-                    for line in f.readlines()[1:]:
-                        print(line.strip())
-            else:
-                print(Fore.RED + "❌ File proxies_alive.csv belum ada.")
-        elif pilihan == "4":
-            print(Fore.YELLOW + "👋 Keluar...")
-            break
+        self.btn_get_proxy.clicked.connect(self.load_proxy_from_url)
+        self.btn_load_file.clicked.connect(self.load_proxy_from_file)
+        self.btn_check.clicked.connect(self.start_check)
+        self.btn_save.clicked.connect(self.save_valid)
+        self.btn_clear.clicked.connect(self.clear_all)
+
+    def load_proxy_from_url(self):
+        urls = self.input_area.toPlainText().splitlines()
+        if not urls:
+            self.output.append("⚠ Masukkan URL proxy di input area!")
+            return
+        self.output.append("⏳ Mulai load proxy dari URL...")
+        self.thread_loader = ProxyLoader(urls)
+        self.thread_loader.update_signal.connect(lambda msg: self.output.append(msg))
+        self.thread_loader.finish_signal.connect(self.finish_load_proxy)
+        self.thread_loader.start()
+
+    def finish_load_proxy(self, proxies):
+        cleaned = []
+        for p in proxies:
+            ip, port, _ = parse_proxy(p)
+            if ip:
+                cleaned.append(p)
+        self.proxies = cleaned
+        self.output.append(f"✔ Selesai load proxy! Total: {len(cleaned)} proxy.")
+        display_count = min(50, len(cleaned))
+        self.output.append("▼ 50 Proxy pertama:")
+        for p in self.proxies[:display_count]:
+            self.output.append(p)
+        self.output.append("… (Sisanya tersimpan di internal list)")
+
+    def load_proxy_from_file(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Load Proxy File", "", "Text Files (*.txt)")
+        if file:
+            with open(file, "r") as f:
+                lines = [l.strip() for l in f if l.strip()]
+            cleaned = []
+            for p in lines:
+                ip, port, _ = parse_proxy(p)
+                if ip:
+                    cleaned.append(p)
+            self.proxies = cleaned
+            self.output.append(f"✔ Berhasil load {len(cleaned)} proxy dari file: {file}")
+            display_count = min(50, len(cleaned))
+            self.output.append("▼ 50 Proxy pertama:")
+            for p in self.proxies[:display_count]:
+                self.output.append(p)
+            self.output.append("… (Sisanya tersimpan di internal list)")
+
+    def start_check(self):
+        if not self.proxies:
+            self.output.append("⚠ Tidak ada proxy untuk dicek. Gunakan 'Get Proxy dari URL' atau load file terlebih dahulu!")
+            return
+        self.output.append("⏳ Mulai cek proxy...")
+        self.progress.setValue(0)
+        self.thread_check = ProxyChecker(self.proxies)
+        self.thread_check.update_signal.connect(self.update_output)
+        self.thread_check.progress_signal.connect(self.progress.setValue)
+        self.thread_check.finish_signal.connect(self.finish_check)
+        self.thread_check.start()
+
+    def update_output(self, proxy, valid):
+        if valid:
+            self.output.append(f"<span style='color:#00FF00;'>{proxy} ✔ VALID</span>")
         else:
-            print(Fore.RED + "❌ Pilihan tidak valid.")
+            self.output.append(f"<span style='color:red;'>{proxy} ✘ INVALID</span>")
+
+    def finish_check(self, valid_count, invalid_count):
+        self.output.append(f"✔ Proxy check selesai! VALID: {valid_count}, INVALID: {invalid_count}")
+        self.progress.setValue(100)
+
+    def save_valid(self):
+        lines = self.output.toPlainText().splitlines()
+        valid = [l.split()[0] for l in lines if "VALID" in l]
+        if not valid:
+            self.output.append("⚠ Tidak ada proxy valid untuk disimpan!")
+            return
+        file, _ = QFileDialog.getSaveFileName(self, "Save Valid Proxy", "valid_proxy.txt")
+        if file:
+            with open(file, "w") as f:
+                f.write("\n".join(valid))
+            self.output.append(f"✔ {len(valid)} proxy valid berhasil disimpan!")
+
+    def clear_all(self):
+        self.input_area.clear()
+        self.output.clear()
+        self.progress.setValue(0)
+        self.output.append("<span style='color:#00FF00;'>✔ Semua area dibersihkan!</span>")
 
 if __name__ == "__main__":
-    menu()
+    app = QApplication(sys.argv)
+    window = ProxyTool()
+    window.show()
+    sys.exit(app.exec_())
